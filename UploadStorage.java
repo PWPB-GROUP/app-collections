@@ -38,7 +38,7 @@ public class UploadStorage extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(btnPilihFile);
+        setContentView(R.layout.uploadfile);
 
         btnPilihFile = findViewById(R.id.uploadfile_pilihfile);
         loading = findViewById(R.id.uploadfile_loading);
