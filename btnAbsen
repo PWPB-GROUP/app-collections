@@ -1,0 +1,130 @@
+
+// saat tombol absen diklik
+btnAbsen.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                loading.setVisibility(View.VISIBLE);
+
+                User user = application.getUserProfile();
+                if (!isAbsen){
+                    if (photoBitmap == null){
+                        Toast.makeText(application, "Silakan masukan foto bukti absen", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    if (edtNote.getText() == null || edtNote.getText().toString().trim().isEmpty()){
+                        Toast.makeText(application, "Silakan masukan note (eg: hari ini hadir..)", Toast.LENGTH_SHORT).show();
+                        Log.d(TAG, "onClick: edt note null/empty");
+                        return;
+                    }
+
+                    long timeIn = System.currentTimeMillis();
+
+                    String photoPath = user.getCompanyId() + "_" + timeIn + "_IMG.jpg";
+
+                    ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                    photoBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
+                    byte[] imgBytes = stream.toByteArray();
+                    photoBitmap.recycle();
+
+                    // menentukan tempat/nama folder dan file
+                    StorageReference imgRef = storage.child("Megawe/attendance_selfie/" + photoPath);
+
+                    // mengirim file
+                    imgRef.putBytes(imgBytes)
+                            .continueWithTask(new Continuation<UploadTask.TaskSnapshot, Task<Uri>>() {
+                                @Override
+                                public Task<Uri> then(@NonNull Task<UploadTask.TaskSnapshot> task) throws Exception {
+                                    if (!task.isSuccessful()){
+                                        Log.d(TAG, "then: img url fail: " + task.getException());
+                                        return null;
+                                    }
+                                    return imgRef.getDownloadUrl();
+                                }
+                            }).addOnCompleteListener(new OnCompleteListener<Uri>() {
+                        @Override
+                        public void onComplete(@NonNull Task<Uri> task) {
+                            loading.setVisibility(View.GONE);
+
+                            if (task.isSuccessful()){
+                            
+                                // mendapat link file yg telah diupload
+                                String imgUrl = task.getResult() == null ? "-" : task.getResult().toString();
+
+                                String attendanceId = "attendance_" + timeIn;
+
+                                String note = edtNote.getText().toString();
+
+                                // menggunakan model attendance
+                                Attendance attendance = new Attendance(
+                                        attendanceId,
+                                        user.getUserName(),
+                                        user.getUserUID(),
+                                        timeIn,
+                                        null,
+                                        "coordinate-xxx-xxx-xx",
+                                        note,
+                                        imgUrl,
+                                        1
+                                );
+
+                                // mengirim model attendance ke firestore
+                                firestore.collection("Companies").document(user.getCompanyId()).collection("attendances").document(attendanceId).set(attendance).addOnCompleteListener(new OnCompleteListener<Void>() {
+                                    @Override
+                                    public void onComplete(@NonNull Task<Void> task) {
+                                        if(task.isSuccessful()){
+                                            mainViewModel.getTimeInLiveData().setValue(timeIn);
+                                            application.saveUserIn(timeIn, imgUrl);
+
+                                            Log.d(TAG, "onSuccess: absen time in success");
+                                            FragmentTransaction ft = getParentFragmentManager().beginTransaction().replace(R.id.main_frame, new AbsenInfoFragment("Selamat! Absen berhasil", "Anda telah melakukan absen jam masuk"));
+                                            ft.commit();
+                                            
+                                            return;
+                                        }
+
+                                        Log.d(TAG, "onComplete: save data attendances gagal: ");
+                                        if (task.getException() != null){
+                                            Log.d(TAG, "onComplete: ex: " + task.getException().getMessage());
+                                        }
+                                    }
+                                });
+                                return;
+                            }
+
+                            FragmentTransaction ft = getParentFragmentManager().beginTransaction().replace(R.id.main_frame, new AbsenInfoFragment("Gagal! Terjadi kesalahan saat absen", "Silahkan coba kembali atau hubungi developer"));
+                            ft.commit();
+                            Log.d(TAG, "onSuccess: absen time in gagal");
+                            if (task.getException() != null){
+                                Log.d(TAG, "onSuccess: ex: " + task.getException().getMessage());
+                            }
+                        }
+                    });
+                    return;
+                }
+
+                long timeOut = System.currentTimeMillis(), timeIn = application.getTimeIn();
+                String attendancesId = "attendance_" + timeIn;
+
+                firestore.collection("Companies").document(user.getCompanyId()).collection("attendances").document(attendancesId).update("timeOut", timeOut).addOnCompleteListener(new OnCompleteListener<Void>() {
+                    @Override
+                    public void onComplete(@NonNull Task<Void> task) {
+                        if (task.isSuccessful()){
+                            loading.setVisibility(View.GONE);
+                            Log.d(TAG, "onComplete: absen time out success");
+
+                            mainViewModel.getTimeOutLiveData().setValue(timeOut);
+                            application.saveUserOut(timeOut);
+//                            application.clearUserIn();
+
+                            // fragment success /toast/dialog
+                            FragmentTransaction ft = getParentFragmentManager().beginTransaction().replace(R.id.main_frame, new AbsenInfoFragment("Selamat! Absen berhasil", "Anda telah melakukan absen jam keluar"));
+                            ft.commit();
+                            return;
+                        }
+
+                        Log.d(TAG, "onComplete: gagal: check time out");
+                    }
+                });
+            }
+        });
